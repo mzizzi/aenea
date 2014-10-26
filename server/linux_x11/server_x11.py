@@ -21,6 +21,8 @@ import os
 import sys
 import time
 
+import tmuxp
+
 import jsonrpclib
 import jsonrpclib.SimpleJSONRPCServer
 
@@ -257,6 +259,11 @@ def get_context(_xdotool=None):
         'id': window_id,
         'title': window_title,
         }
+
+    if window_title == 'tmux':
+        logger.debug('tmux context triggered')
+        return get_tmux_context(properties)
+
     for line in read_command('-id %s' % window_id, 'xprop').split('\n'):
         split = line.split(' = ', 1)
         if len(split) == 2:
@@ -289,6 +296,47 @@ def get_context(_xdotool=None):
             properties['cmdline'] = fd.read().replace('\x00', ' ').strip()
     except OSError:
         pass
+
+    return properties
+
+
+def get_tmux_context(parent_window_properties):
+    """
+    Special case context gathering for windows with the title "tmux".  This is
+    convenient for those who prefer to navigate a tmux session instead of their full
+    desktop environment.  It is very much a hack and should be generalized in the
+    future.
+
+    The following conditions must be met in order for this context to work correctly:
+        1) The window attached to the tmux session has the title "tmux"
+        2) The session described above has the name "aenea"
+
+    :param parent_window_properties:
+    :return:
+    """
+    properties = {
+        'id': parent_window_properties['id'],
+        'parent': parent_window_properties,
+        'tmux': True
+    }
+
+    server = tmuxp.Server()
+    sessions = server.list_sessions()
+    sessions = filter(lambda s: s.get('session_name') == 'aenea', sessions)
+
+    logger.debug('sessions: %s' % sessions)
+
+    if len(sessions) < 1:
+        logger.error('no tmux session named "aenea" found')
+        return properties
+
+    window_name = sessions[0].attached_window().get('window_name')
+    logger.debug('tmux attached window name: %s' % window_name)
+
+    properties['title'] = window_name
+    properties['executable'] = window_name
+
+    logger.debug('tmux context: %s' % properties)
 
     return properties
 
